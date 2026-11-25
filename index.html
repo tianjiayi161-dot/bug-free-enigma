@@ -280,14 +280,14 @@ function readSpread(record){
  const body=el('div',block);el('small',body,places[i]+' · '+(c.reverse?'Reversed':'Upright'));el('h3',body,names[c.id]);el('small',body,c.id<22?'Major Arcana':'Minor Arcana · '+suits[Math.floor((c.id-22)/14)]);el('p',body,'Traditional association · '+meanings[c.id][Number(c.reverse)]+'.')});
  el('p',d,'For a personal interpretation, share your card image and question with your own AI or a tarot reader.');
  d.onclose=()=>d.remove();d.showModal()}
-function spread(parent,reading,interactive){const row=el('div',parent,'','spread');places.forEach((_,i)=>face(row,reading.draw[i],reading.open.includes(i),i,interactive?()=>{if(!state.open.includes(i))state.open.push(i);move(state.open.length===3?'done':'turn')}:null))}
+function spread(parent,reading,interactive){const row=el('div',parent,'','spread');places.forEach((_,i)=>face(row,reading.draw[i],reading.open.includes(i),i,interactive?()=>{if(!state.open.includes(i)){state.open.push(i);if(enabled)tone(540+i*95,.065,.34)}move(state.open.length===3?'done':'turn')}:null))}
 function render(){const scroll=table.querySelector(".rail")?.scrollLeft||0;const p=state.phase;footer.querySelector('.read-action')?.remove();room.dataset.phase=p;table.replaceChildren();room.className=p==='welcome'?'':'close';line.hidden=true;again.hidden=true;hint.textContent='';table.className='layout '+p;
 if(p==='welcome'){caption(0,'Touch the deck');const b=button(table,'',()=>move('breath'),'card');b.setAttribute('aria-label','Touch the deck')}
-if(p==='breath')pause('Take a breath. Hold one question in your mind.','Begin shuffling',()=>move('shuffle'));
+if(p==='breath')pause('Take a breath. Hold one question in your mind.','Begin shuffling',()=>{move('shuffle');if(enabled)noise(.52,2400,.24)});
 if(p==='shuffle'){caption(1,'Gather the cards when you feel ready.');const b=button(table,'',()=>{state.deck=shuffle();move('cut')},'card mixing');for(let i=0;i<6;i++){const leaf=el('span',b,'','leaf');leaf.style.setProperty('--delay',(-i*.23)+'s');leaf.setAttribute('aria-hidden','true')}b.setAttribute('aria-label','Gather the deck');again.hidden=false;again.textContent='Gather the deck';again.onclick=b.onclick}
 if(p==='cut'){caption(2,'Choose where to divide the deck.');const box=el('div',table,'','cutbox');const back=el('div',box,'','card');const slider=el('input',box);slider.type='range';slider.min=1;slider.max=77;slider.value=state.cut;slider.setAttribute('aria-label','Cut position');const count=el('small',box,state.cut+' / 78');slider.oninput=()=>{state.cut=+slider.value;count.textContent=state.cut+' / 78';save()};button(box,'Cut the deck',()=>{state.deck=state.deck.slice(state.cut).concat(state.deck.slice(0,state.cut));move('still')})}
 if(p==='still')pause('Let your hand linger where it is drawn.','Spread the cards',()=>move('pick'));
-if(p==='pick'){spread(table,state,false);const rail=el('div',table,'','rail');state.deck.forEach((c,i)=>{const b=button(rail,'',()=>{state.draw.push(state.deck.splice(i,1)[0]);move(state.draw.length===3?'veil':'pick')},'card');b.setAttribute('aria-label','Choose card '+(i+1))});rail.scrollLeft=scroll;caption(1,'Slide through the deck · Choose for '+places[state.draw.length].toLowerCase())}
+if(p==='pick'){spread(table,state,false);const rail=el('div',table,'','rail');state.deck.forEach((c,i)=>{const b=button(rail,'',()=>{state.draw.push(state.deck.splice(i,1)[0]);if(enabled)noise(.14,1800,.2);move(state.draw.length===3?'veil':'pick')},'card');b.setAttribute('aria-label','Choose card '+(i+1))});rail.scrollLeft=scroll;caption(1,'Slide through the deck · Choose for '+places[state.draw.length].toLowerCase())}
 if(p==='veil'){
  spread(table,state,false);
  caption(2,'Your three cards are set.');
@@ -304,5 +304,38 @@ const footer=room.querySelector('footer');
 const historyButton=button(room.querySelector('header'),'Readings',()=>{const dialog=el('dialog',room);button(dialog,'Close',()=>dialog.close());for(const record of book.past){el('p',dialog,new Date(record.date).toLocaleString('en-GB'));spread(dialog,record,false);noteEditor(dialog,record);button(dialog,'Save card image',()=>keepReading(record));button(dialog,'Card meanings',()=>readSpread(record))}dialog.onclose=()=>dialog.remove();dialog.showModal()});render();
 function noise(d,f,v,loop=false){let buf=ctx.createBuffer(1,ctx.sampleRate*d,ctx.sampleRate),a=buf.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=(Math.random()*2-1)*(loop?1:Math.sin(Math.PI*i/a.length));let s=ctx.createBufferSource(),g=ctx.createGain(),filter=ctx.createBiquadFilter();filter.type='lowpass';filter.frequency.value=f;s.buffer=buf;s.loop=loop;g.gain.value=v;s.connect(filter).connect(g).connect(ctx.destination);s.start()}
 function tone(f,v,d){let o=ctx.createOscillator(),g=ctx.createGain(),t=ctx.currentTime;o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*.65,t+d);g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(ctx.destination);o.start();o.stop(t+d)}
-sound.onclick=async()=>{if(!ctx){ctx=new AudioContext();noise(3,480,.11,true)}enabled=!enabled;if(enabled){await ctx.resume();timer=setInterval(()=>tone(970,.028,.21),7800)}else{clearInterval(timer);await ctx.suspend()}sound.setAttribute('aria-pressed',String(enabled))};
+let windStarted = false;
+function syncSound() {
+  enabled = ctx?.state === 'running';
+  sound.setAttribute('aria-pressed', String(enabled));
+  sound.title = enabled ? 'Mute sound' : 'Turn on sound';
+  clearInterval(timer);
+  if (enabled) timer = setInterval(() => tone(970, .028, .21), 7800);
+}
+sound.onclick = async () => {
+  try {
+    if (!ctx) {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      if (!Audio) throw new Error('Audio unavailable');
+      ctx = new Audio();
+      ctx.onstatechange = syncSound;
+    } else if (ctx.state === 'running') {
+      await ctx.suspend();
+      return;
+    }
+    await ctx.resume();
+    if (ctx.state === 'running') {
+      if (!windStarted) {
+        noise(3, 640, .12, true);
+        windStarted = true;
+      }
+      tone(740, .09, .42);
+    }
+  } catch {
+    syncSound();
+    sound.title = 'Sound unavailable in this browser';
+    return;
+  }
+  syncSound();
+};
 </script>
